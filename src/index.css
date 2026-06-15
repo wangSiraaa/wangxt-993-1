@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --forest-green: #2D6A4F;
+  --forest-green-light: #40916C;
+  --forest-green-dark: #1B4332;
+  --earth-brown: #8B6914;
+  --earth-brown-light: #A67C00;
+  --sky-blue: #48CAE4;
+  --sky-blue-light: #90E0EF;
+  --waitlist-orange: #FB8500;
+  --warning-red: #E63946;
+  --success-green: #06D6A0;
+  --bg-cream: #F5F0E8;
+  --bg-white: #FFFFFF;
+  --text-primary: #1B4332;
+  --text-secondary: #52796F;
+  --text-muted: #95B8A6;
+
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  color: var(--text-primary);
+  background-color: var(--bg-cream);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Noto Serif SC', serif;
+    font-weight: 600;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .greenway-card {
+    @apply bg-white rounded-xl shadow-sm border border-green-100 hover:shadow-md transition-shadow duration-300;
+  }
+
+  .greenway-btn-primary {
+    @apply bg-green-700 text-white rounded-lg shadow-sm hover:shadow-md hover:bg-green-800 transition-all duration-200 px-4 py-2 font-medium;
+  }
+
+  .greenway-btn-secondary {
+    @apply bg-amber-600 text-white rounded-lg shadow-sm hover:shadow-md hover:bg-amber-700 transition-all duration-200 px-4 py-2 font-medium;
+  }
+
+  .greenway-btn-outline {
+    @apply border border-green-700 text-green-700 rounded-lg hover:bg-green-50 transition-all duration-200 px-4 py-2 font-medium;
+  }
+
+  .greenway-input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all duration-200 bg-white;
+  }
+
+  .greenway-section {
+    @apply mb-8;
+  }
+
+  .greenway-heading {
+    @apply font-serif text-2xl font-semibold text-green-900 mb-4;
+  }
+}
+
+@layer utilities {
+  .ring-chart {
+    border-radius: 50%;
+    position: relative;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
