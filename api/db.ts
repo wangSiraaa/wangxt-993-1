@@ -63,6 +63,7 @@ function createTables(db: Database) {
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('citizen','organizer','volunteer')),
     points INTEGER NOT NULL DEFAULT 0,
+    points_frozen INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`)
 
@@ -79,8 +80,9 @@ function createTables(db: Database) {
     equipment_requirements TEXT NOT NULL DEFAULT '[]',
     refund_rule TEXT NOT NULL DEFAULT '',
     points_reward INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','full','ongoing','ended','weather_cancelled')),
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','full','ongoing','suspended','route_switched','ended','weather_cancelled')),
     weather_risk_level TEXT NOT NULL DEFAULT 'low' CHECK(weather_risk_level IN ('low','medium','high')),
+    route_version INTEGER NOT NULL DEFAULT 1,
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`)
@@ -93,7 +95,8 @@ function createTables(db: Database) {
     capacity INTEGER NOT NULL DEFAULT 0,
     supply_info TEXT NOT NULL DEFAULT '',
     risk_level TEXT NOT NULL DEFAULT 'low' CHECK(risk_level IN ('low','medium','high')),
-    sort_order INTEGER NOT NULL DEFAULT 0
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    route_version INTEGER NOT NULL DEFAULT 1
   )`)
 
   db.run(`CREATE TABLE IF NOT EXISTS registrations (
@@ -105,14 +108,18 @@ function createTables(db: Database) {
     age INTEGER NOT NULL,
     emergency_contact TEXT NOT NULL DEFAULT '',
     emergency_phone TEXT NOT NULL DEFAULT '',
+    guardian_name TEXT NOT NULL DEFAULT '',
+    guardian_phone TEXT NOT NULL DEFAULT '',
     liability_signed INTEGER NOT NULL DEFAULT 0,
     equipment_confirmed INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('confirmed','waitlisted','cancelled','refunded')),
+    insurance_signed INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('confirmed','waitlisted','cancelled','refunded','withdrawn','route_switched')),
     waitlist_position INTEGER,
     registered_at TEXT NOT NULL DEFAULT (datetime('now')),
     team_id TEXT,
     is_team_leader INTEGER NOT NULL DEFAULT 0,
-    team_name TEXT
+    team_name TEXT,
+    departure_ready TEXT NOT NULL DEFAULT 'pending' CHECK(departure_ready IN ('pending','ready','blocked'))
   )`)
 
   db.run(`CREATE TABLE IF NOT EXISTS teams (
@@ -121,9 +128,10 @@ function createTables(db: Database) {
     leader_user_id TEXT NOT NULL REFERENCES users(id),
     team_name TEXT NOT NULL,
     member_count INTEGER NOT NULL DEFAULT 1,
-    status TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('confirmed','waitlisted','cancelled','refunded')),
+    status TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('confirmed','waitlisted','cancelled','refunded','withdrawn','split')),
     waitlist_position INTEGER,
-    registered_at TEXT NOT NULL DEFAULT (datetime('now'))
+    registered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    can_depart INTEGER NOT NULL DEFAULT 0
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS team_members (
@@ -135,10 +143,14 @@ function createTables(db: Database) {
     age INTEGER NOT NULL,
     emergency_contact TEXT NOT NULL DEFAULT '',
     emergency_phone TEXT NOT NULL DEFAULT '',
+    guardian_name TEXT NOT NULL DEFAULT '',
+    guardian_phone TEXT NOT NULL DEFAULT '',
     liability_signed INTEGER NOT NULL DEFAULT 0,
     equipment_confirmed INTEGER NOT NULL DEFAULT 0,
+    insurance_signed INTEGER NOT NULL DEFAULT 0,
     is_leader INTEGER NOT NULL DEFAULT 0,
-    checked_in INTEGER NOT NULL DEFAULT 0
+    checked_in INTEGER NOT NULL DEFAULT 0,
+    withdrawn INTEGER NOT NULL DEFAULT 0
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS checkins (
@@ -158,6 +170,41 @@ function createTables(db: Database) {
     activity_id TEXT NOT NULL REFERENCES activities(id),
     points INTEGER NOT NULL,
     reason TEXT NOT NULL DEFAULT '',
+    frozen INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS event_log (
+    id TEXT PRIMARY KEY,
+    activity_id TEXT NOT NULL REFERENCES activities(id),
+    event_type TEXT NOT NULL,
+    actor_id TEXT,
+    actor_role TEXT,
+    detail TEXT NOT NULL DEFAULT '',
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS volunteer_shifts (
+    id TEXT PRIMARY KEY,
+    activity_id TEXT NOT NULL REFERENCES activities(id),
+    volunteer_id TEXT NOT NULL REFERENCES users(id),
+    shift_name TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'assigned' CHECK(status IN ('assigned','checked_in','completed','absent')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS withdrawals (
+    id TEXT PRIMARY KEY,
+    activity_id TEXT NOT NULL REFERENCES activities(id),
+    registration_id TEXT NOT NULL REFERENCES registrations(id),
+    reason TEXT NOT NULL DEFAULT '',
+    refund_amount INTEGER NOT NULL DEFAULT 0,
+    refund_status TEXT NOT NULL DEFAULT 'pending' CHECK(refund_status IN ('pending','approved','rejected','processed')),
+    adjudicator_id TEXT,
+    adjudicator_note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`)
 }
@@ -167,37 +214,53 @@ function seedData(db: Database) {
 
   const orgId = uuid()
   const volId = uuid()
+  const vol2Id = uuid()
   const citizenId = uuid()
 
-  db.run(`INSERT INTO users (id,phone,name,role,points,created_at) VALUES (?,?,?,?,?,?)`,
-    [orgId, '13800000001', '张组织', 'organizer', 100, now])
-  db.run(`INSERT INTO users (id,phone,name,role,points,created_at) VALUES (?,?,?,?,?,?)`,
-    [volId, '13800000002', '李志愿', 'volunteer', 50, now])
-  db.run(`INSERT INTO users (id,phone,name,role,points,created_at) VALUES (?,?,?,?,?,?)`,
-    [citizenId, '13800000003', '王市民', 'citizen', 20, now])
+  db.run(`INSERT INTO users (id,phone,name,role,points,points_frozen,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [orgId, '13800000001', '张组织', 'organizer', 100, 0, now])
+  db.run(`INSERT INTO users (id,phone,name,role,points,points_frozen,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [volId, '13800000002', '李志愿', 'volunteer', 50, 0, now])
+  db.run(`INSERT INTO users (id,phone,name,role,points,points_frozen,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [vol2Id, '13800000004', '赵志愿', 'volunteer', 30, 0, now])
+  db.run(`INSERT INTO users (id,phone,name,role,points,points_frozen,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [citizenId, '13800000003', '王市民', 'citizen', 20, 0, now])
 
   const act1 = uuid()
   const act2 = uuid()
 
-  db.run(`INSERT INTO activities (id,name,type,date,location,description,capacity,age_min,age_max,equipment_requirements,refund_rule,points_reward,status,weather_risk_level,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [act1, '春日滨江徒步', 'hike', '2026-06-20', '滨江绿道', '沿滨江绿道徒步，欣赏春日美景，全程约7.5公里。适合各年龄段市民参加。', 3, 16, 65, JSON.stringify(['运动鞋', '防晒帽', '饮用水']), '活动前48小时可全额退款', 20, 'open', 'low', orgId, now])
+  db.run(`INSERT INTO activities (id,name,type,date,location,description,capacity,age_min,age_max,equipment_requirements,refund_rule,points_reward,status,weather_risk_level,route_version,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [act1, '春日滨江徒步', 'hike', '2026-06-20', '滨江绿道', '沿滨江绿道徒步，欣赏春日美景，全程约7.5公里。适合各年龄段市民参加。', 30, 12, 65, JSON.stringify(['运动鞋', '防晒帽', '饮用水']), '活动前48小时可全额退款', 20, 'open', 'low', 1, orgId, now])
 
-  db.run(`INSERT INTO activities (id,name,type,date,location,description,capacity,age_min,age_max,equipment_requirements,refund_rule,points_reward,status,weather_risk_level,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [act2, '环湖骑行挑战', 'bike', '2026-06-25', '西湖绿道', '环西湖绿道骑行挑战赛，全程15公里。需自备自行车及安全装备。', 20, 18, 55, JSON.stringify(['自行车', '头盔', '护膝']), '活动前72小时可全额退款', 30, 'open', 'medium', orgId, now])
+  db.run(`INSERT INTO activities (id,name,type,date,location,description,capacity,age_min,age_max,equipment_requirements,refund_rule,points_reward,status,weather_risk_level,route_version,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [act2, '环湖骑行挑战', 'bike', '2026-06-25', '西湖绿道', '环西湖绿道骑行挑战赛，全程15公里。需自备自行车及安全装备。', 20, 18, 55, JSON.stringify(['自行车', '头盔', '护膝']), '活动前72小时可全额退款', 30, 'open', 'medium', 1, orgId, now])
 
   const segs = [
-    { id: uuid(), aid: act1, name: '滨江公园出发段', dist: 2.5, cap: 50, supply: '补给站A', risk: 'low', ord: 1 },
-    { id: uuid(), aid: act1, name: '江畔栈道中段', dist: 3.0, cap: 40, supply: '补给站B', risk: 'medium', ord: 2 },
-    { id: uuid(), aid: act1, name: '观景台终点段', dist: 2.0, cap: 50, supply: '', risk: 'low', ord: 3 },
-    { id: uuid(), aid: act2, name: '湖滨起点段', dist: 5.0, cap: 30, supply: '维修点', risk: 'low', ord: 1 },
-    { id: uuid(), aid: act2, name: '山路爬坡段', dist: 4.0, cap: 25, supply: '补给站C', risk: 'high', ord: 2 },
-    { id: uuid(), aid: act2, name: '环湖冲刺段', dist: 6.0, cap: 30, supply: '终点补给', risk: 'medium', ord: 3 },
+    { id: uuid(), aid: act1, name: '滨江公园出发段', dist: 2.5, cap: 50, supply: '补给站A', risk: 'low', ord: 1, rv: 1 },
+    { id: uuid(), aid: act1, name: '江畔栈道中段', dist: 3.0, cap: 40, supply: '补给站B', risk: 'medium', ord: 2, rv: 1 },
+    { id: uuid(), aid: act1, name: '观景台终点段', dist: 2.0, cap: 50, supply: '', risk: 'low', ord: 3, rv: 1 },
+    { id: uuid(), aid: act1, name: '滨江短途线', dist: 4.0, cap: 60, supply: '补给站A', risk: 'low', ord: 1, rv: 2 },
+    { id: uuid(), aid: act1, name: '公园折返段', dist: 2.0, cap: 60, supply: '', risk: 'low', ord: 2, rv: 2 },
+    { id: uuid(), aid: act2, name: '湖滨起点段', dist: 5.0, cap: 30, supply: '维修点', risk: 'low', ord: 1, rv: 1 },
+    { id: uuid(), aid: act2, name: '山路爬坡段', dist: 4.0, cap: 25, supply: '补给站C', risk: 'high', ord: 2, rv: 1 },
+    { id: uuid(), aid: act2, name: '环湖冲刺段', dist: 6.0, cap: 30, supply: '终点补给', risk: 'medium', ord: 3, rv: 1 },
+    { id: uuid(), aid: act2, name: '湖滨短途出发', dist: 3.0, cap: 40, supply: '维修点', risk: 'low', ord: 1, rv: 2 },
+    { id: uuid(), aid: act2, name: '湖滨短途折返', dist: 3.0, cap: 40, supply: '终点补给', risk: 'low', ord: 2, rv: 2 },
   ]
 
   for (const s of segs) {
-    db.run(`INSERT INTO route_segments (id,activity_id,name,distance,capacity,supply_info,risk_level,sort_order) VALUES (?,?,?,?,?,?,?,?)`,
-      [s.id, s.aid, s.name, s.dist, s.cap, s.supply, s.risk, s.ord])
+    db.run(`INSERT INTO route_segments (id,activity_id,name,distance,capacity,supply_info,risk_level,sort_order,route_version) VALUES (?,?,?,?,?,?,?,?,?)`,
+      [s.id, s.aid, s.name, s.dist, s.cap, s.supply, s.risk, s.ord, s.rv])
   }
+
+  db.run(`INSERT INTO volunteer_shifts (id,activity_id,volunteer_id,shift_name,start_time,end_time,status,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    [uuid(), act1, volId, '签到岗', '2026-06-20T07:30:00', '2026-06-20T09:00:00', 'assigned', now])
+  db.run(`INSERT INTO volunteer_shifts (id,activity_id,volunteer_id,shift_name,start_time,end_time,status,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    [uuid(), act1, volId, '补给岗', '2026-06-20T09:00:00', '2026-06-20T12:00:00', 'assigned', now])
+  db.run(`INSERT INTO volunteer_shifts (id,activity_id,volunteer_id,shift_name,start_time,end_time,status,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    [uuid(), act1, vol2Id, '签到岗', '2026-06-20T07:30:00', '2026-06-20T09:00:00', 'assigned', now])
+  db.run(`INSERT INTO volunteer_shifts (id,activity_id,volunteer_id,shift_name,start_time,end_time,status,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    [uuid(), act2, vol2Id, '全程岗', '2026-06-25T07:00:00', '2026-06-25T14:00:00', 'assigned', now])
 }
 
 export function uuid(): string {

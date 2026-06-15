@@ -1,14 +1,53 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { BarChart3, Users, CheckCircle, AlertTriangle, Award, Clock, TrendingUp } from 'lucide-react';
-import { review } from '@/api';
-import type { ReviewData } from '@/types';
+import { BarChart3, Users, CheckCircle, AlertTriangle, Award, Clock, TrendingUp, Route, UserX, ShieldCheck, Gavel, Pause, Play, ArrowRightLeft } from 'lucide-react';
+import { review, operations } from '@/api';
+import type { ReviewData, EventLogEntry, Withdrawal } from '@/types';
 import StatusBadge from '@/components/StatusBadge';
 import { cn } from '@/lib/utils';
+
+const timelineIcons: Record<string, React.ReactNode> = {
+  route_switch: <ArrowRightLeft className="w-3 h-3" />,
+  suspended: <Pause className="w-3 h-3" />,
+  resumed: <Play className="w-3 h-3" />,
+  withdraw: <UserX className="w-3 h-3" />,
+  withdrawal_adjudicate: <Gavel className="w-3 h-3" />,
+  team_reduce: <Users className="w-3 h-3" />,
+  waitlist_promote: <ShieldCheck className="w-3 h-3" />,
+  volunteer_shift_add: <Clock className="w-3 h-3" />,
+  volunteer_shift_status: <Clock className="w-3 h-3" />,
+};
+
+const timelineColors: Record<string, string> = {
+  route_switch: 'bg-orange-400',
+  suspended: 'bg-red-400',
+  resumed: 'bg-green-400',
+  withdraw: 'bg-yellow-400',
+  withdrawal_adjudicate: 'bg-purple-400',
+  team_reduce: 'bg-cyan-400',
+  waitlist_promote: 'bg-emerald-400',
+  volunteer_shift_add: 'bg-sky-400',
+  volunteer_shift_status: 'bg-sky-400',
+};
+
+const refundStatusLabels: Record<string, string> = {
+  pending: '待裁定',
+  approved: '已批准',
+  rejected: '已驳回',
+  processed: '已退款',
+};
+
+const refundStatusColors: Record<string, string> = {
+  pending: 'bg-yellow-100 text-yellow-700',
+  approved: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700',
+  processed: 'bg-blue-100 text-blue-700',
+};
 
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<ReviewData | null>(null);
+  const [eventLog, setEventLog] = useState<EventLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -22,6 +61,10 @@ export default function ReviewPage() {
         setError(err instanceof Error ? err.message : '获取复盘数据失败');
       })
       .finally(() => setLoading(false));
+
+    operations.getEventLog(id!)
+      .then(setEventLog)
+      .catch(() => setEventLog([]));
   }, [id]);
 
   if (loading) {
@@ -56,10 +99,27 @@ export default function ReviewPage() {
     { label: '候补中', value: data.stats.waitlistCount, color: 'text-waitlist' },
     { label: '已取消', value: data.stats.cancelledCount, color: 'text-gray-500' },
     { label: '退款数', value: data.stats.refundCount, color: 'text-sky-500' },
-    ...(data.stats.teamCount !== undefined
-      ? [{ label: '团队数', value: data.stats.teamCount, color: 'text-forest-600' }]
-      : []),
+    ...(data.stats.withdrawnCount !== undefined ? [{ label: '退赛数', value: data.stats.withdrawnCount, color: 'text-orange-500' }] : []),
+    ...(data.stats.routeSwitchedCount !== undefined ? [{ label: '改线受影响', value: data.stats.routeSwitchedCount, color: 'text-orange-600' }] : []),
+    ...(data.stats.teamCount !== undefined ? [{ label: '团队数', value: data.stats.teamCount, color: 'text-forest-600' }] : []),
   ];
+
+  const mergedTimeline = [
+    ...data.timeline.map((item) => ({
+      time: item.time,
+      event: item.event,
+      detail: item.detail,
+      source: item.source || 'review',
+      eventType: '',
+    })),
+    ...eventLog.map((entry) => ({
+      time: new Date(entry.createdAt).toLocaleString('zh-CN'),
+      event: getEventLabel(entry.eventType),
+      detail: entry.detail,
+      source: 'event_log' as const,
+      eventType: entry.eventType,
+    })),
+  ].sort((a, b) => a.time.localeCompare(b.time));
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -145,24 +205,68 @@ export default function ReviewPage() {
         </div>
       </div>
 
+      {data.withdrawals && data.withdrawals.length > 0 && (
+        <div className="greenway-card p-6 mb-8">
+          <h2 className="font-serif text-lg font-semibold text-forest-800 mb-4 flex items-center gap-2">
+            <Gavel className="w-5 h-5 text-purple-500" /> 退赛退款记录
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-2 text-gray-500 font-medium">报名人</th>
+                  <th className="text-left py-2 text-gray-500 font-medium">退赛原因</th>
+                  <th className="text-center py-2 text-gray-500 font-medium">退费金额</th>
+                  <th className="text-center py-2 text-gray-500 font-medium">退款状态</th>
+                  <th className="text-left py-2 text-gray-500 font-medium">裁定人</th>
+                  <th className="text-left py-2 text-gray-500 font-medium">时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.withdrawals.map((w) => (
+                  <tr key={w.id} className="border-b border-gray-50">
+                    <td className="py-3 font-medium text-forest-800">{w.registrationName}</td>
+                    <td className="py-3 text-gray-600">{w.reason}</td>
+                    <td className="py-3 text-center font-medium">{w.refundAmount > 0 ? `${w.refundAmount}积分` : '—'}</td>
+                    <td className="py-3 text-center">
+                      <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium', refundStatusColors[w.refundStatus])}>
+                        {refundStatusLabels[w.refundStatus]}
+                      </span>
+                    </td>
+                    <td className="py-3 text-gray-500 text-xs">{w.adjudicatorName || '—'}</td>
+                    <td className="py-3 text-gray-400 text-xs">{new Date(w.createdAt).toLocaleString('zh-CN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="greenway-card p-6">
         <h2 className="font-serif text-lg font-semibold text-forest-800 mb-4 flex items-center gap-2">
           <Clock className="w-5 h-5 text-earth-400" /> 活动时间线
+          <span className="text-xs text-gray-400 font-normal ml-2">（来源：统一事件日志）</span>
         </h2>
-        {data.timeline.length === 0 ? (
+        {mergedTimeline.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-8">暂无时间线记录</p>
         ) : (
           <div className="space-y-0">
-            {data.timeline.map((item, i) => (
+            {mergedTimeline.map((item, i) => (
               <div key={i} className="flex gap-4">
                 <div className="flex flex-col items-center">
-                  <div className="w-3 h-3 rounded-full bg-forest-400" />
-                  {i < data.timeline.length - 1 && <div className="w-0.5 h-12 bg-forest-200" />}
+                  <div className={cn('w-6 h-6 rounded-full flex items-center justify-center text-white', timelineColors[item.eventType] || 'bg-forest-400')}>
+                    {timelineIcons[item.eventType] || <Clock className="w-3 h-3" />}
+                  </div>
+                  {i < mergedTimeline.length - 1 && <div className="w-0.5 h-12 bg-forest-200" />}
                 </div>
                 <div className="pb-6">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-earth-400">{item.time}</span>
                     <span className="font-medium text-forest-800 text-sm">{item.event}</span>
+                    {item.source === 'event_log' && (
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-forest-100 text-forest-500">实时日志</span>
+                    )}
                   </div>
                   <p className="text-gray-500 text-xs mt-0.5">{item.detail}</p>
                 </div>
@@ -173,4 +277,19 @@ export default function ReviewPage() {
       </div>
     </div>
   );
+}
+
+function getEventLabel(eventType: string): string {
+  const labels: Record<string, string> = {
+    route_switch: '天气改线',
+    suspended: '活动中止',
+    resumed: '活动恢复',
+    withdraw: '中途退赛',
+    withdrawal_adjudicate: '退费裁定',
+    team_reduce: '团队减员',
+    waitlist_promote: '候补转正',
+    volunteer_shift_add: '班次新增',
+    volunteer_shift_status: '班次状态',
+  };
+  return labels[eventType] || eventType;
 }

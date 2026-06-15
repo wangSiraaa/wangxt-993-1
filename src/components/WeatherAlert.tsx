@@ -1,4 +1,4 @@
-import { AlertTriangle, CloudRain, Wind, Thermometer } from 'lucide-react';
+import { AlertTriangle, CloudRain, Wind, Thermometer, ArrowRightLeft } from 'lucide-react';
 import type { WeatherInfo } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -60,8 +60,17 @@ export default function WeatherAlert({ weather, className }: WeatherAlertProps) 
           {weather.alertLevel !== 'none' && (
             <p className="mt-2 text-xs text-gray-500">
               {weather.alertLevel === 'yellow' && '请注意天气变化，活动可能受到影响。'}
-              {weather.alertLevel === 'orange' && '恶劣天气预警，建议减少户外活动，活动可能推迟。'}
-              {weather.alertLevel === 'red' && '极端天气预警，活动将取消，请注意安全！'}
+              {weather.alertLevel === 'orange' && (
+                <span className="flex items-start gap-1">
+                  <ArrowRightLeft className="w-3 h-3 mt-0.5 shrink-0" />
+                  恶劣天气预警，建议切换至短线或推迟出发。
+                </span>
+              )}
+              {weather.alertLevel === 'red' && (
+                <span>
+                  极端天气预警！建议立即切换短线，如无短线可切换则取消活动，请注意安全！
+                </span>
+              )}
             </p>
           )}
         </div>

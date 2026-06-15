@@ -4,11 +4,12 @@ export interface User {
   name: string;
   role: 'citizen' | 'organizer' | 'volunteer';
   points: number;
+  pointsFrozen: number;
   createdAt?: string;
 }
 
 export type ActivityType = 'hike' | 'bike';
-export type ActivityStatus = 'open' | 'full' | 'ongoing' | 'ended' | 'weather_cancelled';
+export type ActivityStatus = 'open' | 'full' | 'ongoing' | 'suspended' | 'route_switched' | 'ended' | 'weather_cancelled';
 export type RiskLevel = 'low' | 'medium' | 'high';
 
 export interface RouteSegment {
@@ -21,6 +22,7 @@ export interface RouteSegment {
   riskLevel: RiskLevel;
   sortOrder: number;
   currentLoad?: number;
+  routeVersion: number;
 }
 
 export interface WeatherInfo {
@@ -47,6 +49,7 @@ export interface Activity {
   pointsReward: number;
   status: ActivityStatus;
   weatherRiskLevel: RiskLevel;
+  routeVersion: number;
   createdBy: string;
   createdAt: string;
   routeSegments: RouteSegment[];
@@ -54,7 +57,8 @@ export interface Activity {
   waitlistCount?: number;
 }
 
-export type RegistrationStatus = 'confirmed' | 'waitlisted' | 'cancelled' | 'refunded';
+export type RegistrationStatus = 'confirmed' | 'waitlisted' | 'cancelled' | 'refunded' | 'withdrawn' | 'route_switched';
+export type DepartureReady = 'pending' | 'ready' | 'blocked';
 
 export interface TeamMember {
   id: string;
@@ -65,10 +69,14 @@ export interface TeamMember {
   age: number;
   emergencyContact: string;
   emergencyPhone: string;
+  guardianName: string;
+  guardianPhone: string;
   liabilitySigned: boolean;
   equipmentConfirmed: boolean;
+  insuranceSigned: boolean;
   isLeader: boolean;
   checkedIn: boolean;
+  withdrawn: boolean;
 }
 
 export interface TeamRegistration {
@@ -80,6 +88,7 @@ export interface TeamRegistration {
   status: RegistrationStatus;
   waitlistPosition: number | null;
   registeredAt: string;
+  canDepart: boolean;
   members: TeamMember[];
 }
 
@@ -92,14 +101,18 @@ export interface Registration {
   age: number;
   emergencyContact: string;
   emergencyPhone: string;
+  guardianName: string;
+  guardianPhone: string;
   liabilitySigned: boolean;
   equipmentConfirmed: boolean;
+  insuranceSigned: boolean;
   status: RegistrationStatus;
   waitlistPosition: number | null;
   registeredAt: string;
   teamId?: string;
   isTeamLeader?: boolean;
   teamName?: string;
+  departureReady: DepartureReady;
   members?: TeamMember[];
   activityName?: string;
   activityDate?: string;
@@ -159,6 +172,7 @@ export interface PointsLedgerRecord {
   activityId: string;
   points: number;
   reason: string;
+  frozen: boolean;
   createdAt: string;
   activityName?: string;
 }
@@ -166,6 +180,106 @@ export interface PointsLedgerRecord {
 export interface PointsLedger {
   total: number;
   records: PointsLedgerRecord[];
+}
+
+export interface EventLogEntry {
+  id: string;
+  activityId: string;
+  eventType: string;
+  actorId: string | null;
+  actorRole: string | null;
+  detail: string;
+  metadata: Record<string, any>;
+  createdAt: string;
+}
+
+export interface VolunteerShift {
+  id: string;
+  activityId: string;
+  volunteerId: string;
+  shiftName: string;
+  startTime: string;
+  endTime: string;
+  status: 'assigned' | 'checked_in' | 'completed' | 'absent';
+  volunteerName?: string;
+  volunteerPhone?: string;
+  createdAt: string;
+}
+
+export interface VolunteerShiftsData {
+  shifts: VolunteerShift[];
+  summary: { assigned: number; checkedIn: number; completed: number; absent: number; total: number };
+}
+
+export interface Withdrawal {
+  id: string;
+  activityId: string;
+  registrationId: string;
+  reason: string;
+  refundAmount: number;
+  refundStatus: 'pending' | 'approved' | 'rejected' | 'processed';
+  adjudicatorId: string | null;
+  adjudicatorNote: string;
+  createdAt: string;
+}
+
+export interface DepartureListItem {
+  id: string;
+  name: string;
+  phone: string;
+  age: number;
+  status: RegistrationStatus;
+  teamId: string | null;
+  teamName: string | null;
+  isTeamLeader: boolean;
+  liabilitySigned: boolean;
+  equipmentConfirmed: boolean;
+  insuranceSigned: boolean;
+  departureReady: DepartureReady;
+  guardianName: string;
+  guardianPhone: string;
+}
+
+export interface DepartureListData {
+  registrations: DepartureListItem[];
+  teams: { id: string; teamName: string; memberCount: number; canDepart: boolean }[];
+  summary: { ready: number; blocked: number; pending: number; total: number };
+}
+
+export interface RouteSwitchResult {
+  newVersion: number;
+  affectedCount: number;
+  newSegments: RouteSegment[];
+  activityStatus: ActivityStatus;
+}
+
+export interface SuspensionResult {
+  status: ActivityStatus;
+  frozenCount: number;
+}
+
+export interface ResumeResult {
+  status: ActivityStatus;
+  unfrozenCount: number;
+}
+
+export interface WithdrawResult {
+  registrationId: string;
+  withdrawalId: string;
+  status: RegistrationStatus;
+  refundStatus: string;
+}
+
+export interface WithdrawalAdjudicateResult {
+  withdrawalId: string;
+  refundStatus: string;
+  refundAmount: number;
+}
+
+export interface TeamReduceResult {
+  teamId: string;
+  newMemberCount: number;
+  removedNames: string[];
 }
 
 export interface ReviewData {
@@ -180,6 +294,8 @@ export interface ReviewData {
     exceptionCount: number;
     totalPointsIssued: number;
     teamCount?: number;
+    withdrawnCount: number;
+    routeSwitchedCount: number;
   };
   exceptions: {
     registrationId: string;
@@ -187,9 +303,20 @@ export interface ReviewData {
     note: string;
     createdAt: string;
   }[];
+  withdrawals: {
+    id: string;
+    registrationId: string;
+    name: string;
+    reason: string;
+    refundAmount: number;
+    refundStatus: string;
+    adjudicatorNote: string;
+    createdAt: string;
+  }[];
   timeline: {
     time: string;
     event: string;
     detail: string;
+    source: string;
   }[];
 }

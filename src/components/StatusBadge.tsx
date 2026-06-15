@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 
-type ActivityStatus = 'open' | 'full' | 'ongoing' | 'ended' | 'weather_cancelled';
-type RegistrationStatus = 'confirmed' | 'waitlisted' | 'cancelled' | 'refunded';
+type ActivityStatus = 'open' | 'full' | 'ongoing' | 'ended' | 'weather_cancelled' | 'suspended' | 'route_switched';
+type RegistrationStatus = 'confirmed' | 'waitlisted' | 'cancelled' | 'refunded' | 'withdrawn' | 'route_switched';
 
 const activityColors: Record<ActivityStatus, string> = {
   open: 'bg-success/10 text-success border-success/30',
@@ -9,6 +9,8 @@ const activityColors: Record<ActivityStatus, string> = {
   ongoing: 'bg-sky-400/10 text-sky-600 border-sky-400/30',
   ended: 'bg-gray-100 text-gray-500 border-gray-200',
   weather_cancelled: 'bg-warning/10 text-warning border-warning/30',
+  suspended: 'bg-red-500/10 text-red-600 border-red-400/30',
+  route_switched: 'bg-orange-400/10 text-orange-600 border-orange-400/30',
 };
 
 const registrationColors: Record<RegistrationStatus, string> = {
@@ -16,6 +18,8 @@ const registrationColors: Record<RegistrationStatus, string> = {
   waitlisted: 'bg-waitlist/10 text-waitlist border-waitlist/30',
   cancelled: 'bg-gray-100 text-gray-500 border-gray-200',
   refunded: 'bg-sky-400/10 text-sky-600 border-sky-400/30',
+  withdrawn: 'bg-orange-400/10 text-orange-600 border-orange-400/30',
+  route_switched: 'bg-orange-400/10 text-orange-500 border-orange-300/30',
 };
 
 const activityLabels: Record<ActivityStatus, string> = {
@@ -24,6 +28,8 @@ const activityLabels: Record<ActivityStatus, string> = {
   ongoing: '进行中',
   ended: '已结束',
   weather_cancelled: '天气取消',
+  suspended: '已中止',
+  route_switched: '已改线',
 };
 
 const registrationLabels: Record<RegistrationStatus, string> = {
@@ -31,6 +37,8 @@ const registrationLabels: Record<RegistrationStatus, string> = {
   waitlisted: '候补中',
   cancelled: '已取消',
   refunded: '已退款',
+  withdrawn: '已退赛',
+  route_switched: '已改线',
 };
 
 interface StatusBadgeProps {
@@ -47,11 +55,11 @@ export default function StatusBadge({ status, type = 'activity', className }: St
     <span
       className={cn(
         'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border',
-        colors[status as keyof typeof colors],
+        colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-500 border-gray-200',
         className
       )}
     >
-      {labels[status as keyof typeof labels]}
+      {labels[status as keyof typeof labels] || status}
     </span>
   );
 }

@@ -13,6 +13,7 @@ import checkinsRouter from './routes/checkins.js'
 import usersRouter from './routes/users.js'
 import routeRiskRouter from './routes/route-risk.js'
 import reviewRouter from './routes/review.js'
+import operationsRouter from './routes/operations.js'
 import { getDb } from './db.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -32,6 +33,7 @@ app.use('/api/checkins', checkinsRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/route-risk', routeRiskRouter)
 app.use('/api/review', reviewRouter)
+app.use('/api/operations', operationsRouter)
 
 app.use(
   '/api/health',

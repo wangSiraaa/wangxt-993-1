@@ -12,6 +12,16 @@ import type {
   CancelResult,
   PointsLedger,
   TeamMember,
+  EventLogEntry,
+  VolunteerShiftsData,
+  DepartureListData,
+  RouteSwitchResult,
+  SuspensionResult,
+  ResumeResult,
+  WithdrawResult,
+  WithdrawalAdjudicateResult,
+  TeamReduceResult,
+  VolunteerShift,
 } from './types';
 
 const BASE = '/api';
@@ -62,7 +72,7 @@ export const registrations = {
 };
 
 export const checkins = {
-  checkin: (data: { activityId: string; registrationId: string; volunteerId: string; isException?: boolean; note?: string }) =>
+  checkin: (data: { activityId: string; registrationId: string; volunteerId: string; isException?: boolean; note?: string; memberName?: string }) =>
     request<Checkin>('/checkins', { method: 'POST', body: JSON.stringify(data) }),
   getStats: (activityId: string) =>
     request<CheckinStats>(`/checkins/activity/${activityId}/stats`),
@@ -89,4 +99,31 @@ export const routeRisk = {
 export const review = {
   getReviewData: (activityId: string) =>
     request<ReviewData>(`/review/${activityId}`),
+};
+
+export const operations = {
+  routeSwitch: (activityId: string, actorId?: string) =>
+    request<RouteSwitchResult>(`/operations/${activityId}/route-switch`, { method: 'POST', body: JSON.stringify({ actorId }) }),
+  suspend: (activityId: string, reason: string, actorId?: string) =>
+    request<SuspensionResult>(`/operations/${activityId}/suspend`, { method: 'POST', body: JSON.stringify({ reason, actorId }) }),
+  resume: (activityId: string, actorId?: string) =>
+    request<ResumeResult>(`/operations/${activityId}/resume`, { method: 'POST', body: JSON.stringify({ actorId }) }),
+  teamReduce: (activityId: string, teamId: string, memberIds: string[], actorId?: string) =>
+    request<TeamReduceResult>(`/operations/${activityId}/team-reduce`, { method: 'POST', body: JSON.stringify({ teamId, memberIds, actorId }) }),
+  withdraw: (activityId: string, registrationId: string, reason: string, actorId?: string, actorRole?: string) =>
+    request<WithdrawResult>(`/operations/${activityId}/withdraw`, { method: 'POST', body: JSON.stringify({ registrationId, reason, actorId, actorRole }) }),
+  adjudicateWithdrawal: (activityId: string, withdrawalId: string, refundStatus: string, refundAmount: number, adjudicatorId: string, adjudicatorNote?: string) =>
+    request<WithdrawalAdjudicateResult>(`/operations/${activityId}/withdrawal-adjudicate`, { method: 'POST', body: JSON.stringify({ withdrawalId, refundStatus, refundAmount, adjudicatorId, adjudicatorNote }) }),
+  getDepartureList: (activityId: string) =>
+    request<DepartureListData>(`/operations/${activityId}/departure-list`),
+  getEventLog: (activityId: string, eventType?: string) => {
+    const query = eventType ? `?eventType=${eventType}` : '';
+    return request<EventLogEntry[]>(`/operations/${activityId}/event-log${query}`);
+  },
+  getVolunteerShifts: (activityId: string) =>
+    request<VolunteerShiftsData>(`/operations/${activityId}/volunteer-shifts`),
+  addVolunteerShift: (activityId: string, data: { volunteerId: string; shiftName: string; startTime: string; endTime: string; actorId?: string }) =>
+    request<{ id: string }>(`/operations/${activityId}/volunteer-shifts`, { method: 'POST', body: JSON.stringify(data) }),
+  updateVolunteerShiftStatus: (activityId: string, shiftId: string, status: VolunteerShift['status'], actorId?: string) =>
+    request<{ id: string; status: string }>(`/operations/${activityId}/volunteer-shifts/${shiftId}/status`, { method: 'PUT', body: JSON.stringify({ status, actorId }) }),
 };
