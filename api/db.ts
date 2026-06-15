@@ -109,8 +109,37 @@ function createTables(db: Database) {
     equipment_confirmed INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('confirmed','waitlisted','cancelled','refunded')),
     waitlist_position INTEGER,
-    registered_at TEXT NOT NULL DEFAULT (datetime('now'))
+    registered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    team_id TEXT,
+    is_team_leader INTEGER NOT NULL DEFAULT 0,
+    team_name TEXT
   )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS teams (
+    id TEXT PRIMARY KEY,
+    activity_id TEXT NOT NULL REFERENCES activities(id),
+    leader_user_id TEXT NOT NULL REFERENCES users(id),
+    team_name TEXT NOT NULL,
+    member_count INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('confirmed','waitlisted','cancelled','refunded')),
+    waitlist_position INTEGER,
+    registered_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS team_members (
+    id TEXT PRIMARY KEY,
+    registration_id TEXT NOT NULL REFERENCES registrations(id),
+    team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    age INTEGER NOT NULL,
+    emergency_contact TEXT NOT NULL DEFAULT '',
+    emergency_phone TEXT NOT NULL DEFAULT '',
+    liability_signed INTEGER NOT NULL DEFAULT 0,
+    equipment_confirmed INTEGER NOT NULL DEFAULT 0,
+    is_leader INTEGER NOT NULL DEFAULT 0,
+    checked_in INTEGER NOT NULL DEFAULT 0
+  )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS checkins (
     id TEXT PRIMARY KEY,
@@ -119,7 +148,8 @@ function createTables(db: Database) {
     volunteer_id TEXT NOT NULL REFERENCES users(id),
     is_exception INTEGER NOT NULL DEFAULT 0,
     note TEXT NOT NULL DEFAULT '',
-    checked_in_at TEXT NOT NULL DEFAULT (datetime('now'))
+    checked_in_at TEXT NOT NULL DEFAULT (datetime('now')),
+    team_member_id TEXT REFERENCES team_members(id)
   )`)
 
   db.run(`CREATE TABLE IF NOT EXISTS points_ledger (
@@ -209,4 +239,23 @@ export function parseActivityRow(row: any): any {
     try { camel.equipmentRequirements = JSON.parse(camel.equipmentRequirements) } catch { camel.equipmentRequirements = [] }
   }
   return camel
+}
+
+export function parseRegistrationRow(row: any): any {
+  if (!row) return null
+  const c = objectToCamel(row)
+  c.liabilitySigned = !!c.liabilitySigned
+  c.equipmentConfirmed = !!c.equipmentConfirmed
+  c.isTeamLeader = !!c.isTeamLeader
+  return c
+}
+
+export function parseTeamMemberRow(row: any): any {
+  if (!row) return null
+  const c = objectToCamel(row)
+  c.liabilitySigned = !!c.liabilitySigned
+  c.equipmentConfirmed = !!c.equipmentConfirmed
+  c.isLeader = !!c.isLeader
+  c.checkedIn = !!c.checkedIn
+  return c
 }

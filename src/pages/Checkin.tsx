@@ -34,7 +34,7 @@ export default function CheckinPage() {
 
   const confirmedRegs = registrations.filter((r) => r.status === 'confirmed');
   const filtered = confirmedRegs.filter(
-    (r) => !searchTerm || r.name.includes(searchTerm) || r.phone.includes(searchTerm)
+    (r) => !searchTerm || r.name.includes(searchTerm) || r.phone.includes(searchTerm) || (r.teamName && r.teamName.includes(searchTerm))
   );
 
   const handleCheckin = async (reg: Registration) => {
@@ -111,8 +111,31 @@ export default function CheckinPage() {
                         {isChecked ? <CheckCircle className="w-5 h-5" /> : reg.name[0]}
                       </div>
                       <div>
-                        <div className="font-medium text-sm text-forest-800">{reg.name}</div>
+                        <div className="font-medium text-sm text-forest-800">
+                          {reg.name}
+                          {reg.teamName && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-forest-100 text-forest-700">
+                              {reg.teamName}{reg.isTeamLeader ? '·队长' : ''}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-gray-500">{reg.phone} · {reg.age}岁</div>
+                        {reg.members && reg.members.length > 0 && (
+                          <div className="mt-1.5 pt-1.5 border-t border-gray-100 max-w-xs">
+                            <p className="text-[10px] text-gray-400 mb-1">团队成员：</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {reg.members.map((m, i) => (
+                                <span key={i} className={cn(
+                                  'inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded',
+                                  m.checkedIn ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                                )}>
+                                  {m.checkedIn && <CheckCircle className="w-2.5 h-2.5" />}
+                                  {m.name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       {isException && <span className="text-xs text-warning font-medium flex items-center gap-1"><AlertTriangle className="w-3 h-3" />异常</span>}
                     </div>
@@ -159,6 +182,12 @@ export default function CheckinPage() {
                   <div className="flex justify-between"><span className="text-gray-500">已签到</span><span className="font-medium text-success">{stats.checkedIn}</span></div>
                   <div className="flex justify-between"><span className="text-gray-500">未签到</span><span className="font-medium text-gray-600">{stats.notCheckedIn}</span></div>
                   <div className="flex justify-between"><span className="text-gray-500">异常</span><span className="font-medium text-warning">{stats.exceptions}</span></div>
+                  {stats.teamCount !== undefined && stats.teamCount > 0 && (
+                    <div className="pt-2 mt-2 border-t border-gray-100">
+                      <div className="flex justify-between"><span className="text-gray-500">团队数量</span><span className="font-medium text-forest-700">{stats.teamCount}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">团队成员已签到</span><span className="font-medium text-success">{stats.teamCheckedIn ?? 0}</span></div>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (

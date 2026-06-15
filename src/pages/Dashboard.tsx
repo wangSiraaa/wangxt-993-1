@@ -117,6 +117,12 @@ export default function Dashboard() {
                 <span className="text-gray-400 text-sm">已取消</span>
                 <span className="text-3xl font-bold text-gray-500">{(stats?.total ?? 0) - (stats?.checkedIn ?? 0) - activity.waitlistCount}</span>
               </div>
+              {stats?.teamCount !== undefined && stats.teamCount > 0 && (
+                <div className="flex justify-between items-end pt-2 mt-2 border-t border-green-700/50">
+                  <span className="text-sky-300 text-sm">团队数</span>
+                  <span className="text-2xl font-bold text-sky-400">{stats.teamCount}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -192,7 +198,12 @@ export default function Dashboard() {
                         {reg.waitlistPosition}
                       </span>
                       <div>
-                        <div className="text-sm font-medium">{reg.name}</div>
+                        <div className="text-sm font-medium">
+                          {reg.name}
+                          {reg.teamName && (
+                            <span className="ml-1.5 text-xs text-green-400">[{reg.teamName}]</span>
+                          )}
+                        </div>
                         <div className="text-xs text-green-400">{reg.phone}</div>
                       </div>
                     </div>

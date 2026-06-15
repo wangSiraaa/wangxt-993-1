@@ -11,6 +11,7 @@ import type {
   RegisterResult,
   CancelResult,
   PointsLedger,
+  TeamMember,
 } from './types';
 
 const BASE = '/api';
@@ -50,7 +51,7 @@ export const activities = {
 };
 
 export const registrations = {
-  register: (activityId: string, data: Omit<Partial<Registration>, 'id' | 'activityId'> & { userId: string }) =>
+  register: (activityId: string, data: Omit<Partial<Registration>, 'id' | 'activityId'> & { userId: string; isTeam?: boolean; teamName?: string; teamMembers?: Omit<TeamMember, 'id' | 'registrationId' | 'teamId' | 'checkedIn'>[] }) =>
     request<RegisterResult>(`/registrations/${activityId}/register`, { method: 'POST', body: JSON.stringify(data) }),
   cancel: (regId: string) =>
     request<CancelResult>(`/registrations/${regId}`, { method: 'DELETE' }),

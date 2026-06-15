@@ -56,6 +56,9 @@ export default function ReviewPage() {
     { label: '候补中', value: data.stats.waitlistCount, color: 'text-waitlist' },
     { label: '已取消', value: data.stats.cancelledCount, color: 'text-gray-500' },
     { label: '退款数', value: data.stats.refundCount, color: 'text-sky-500' },
+    ...(data.stats.teamCount !== undefined
+      ? [{ label: '团队数', value: data.stats.teamCount, color: 'text-forest-600' }]
+      : []),
   ];
 
   return (

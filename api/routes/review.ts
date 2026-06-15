@@ -25,11 +25,23 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 
   activity.routeSegments = routeSegments
 
-  const cntResult = db.exec(
-    "SELECT COUNT(*) as cnt FROM registrations WHERE activity_id = ? AND status = 'confirmed'",
+  const indCntResult = db.exec(
+    "SELECT COUNT(*) as cnt FROM registrations WHERE activity_id = ? AND status = 'confirmed' AND team_id IS NULL",
     [id]
   )
-  const confirmedCount = cntResult.length ? (cntResult[0].values[0][0] as number) : 0
+  const confirmedIndividual = indCntResult.length ? (indCntResult[0].values[0][0] as number) : 0
+
+  const teamCntResult = db.exec(
+    "SELECT COALESCE(SUM(member_count), 0) as cnt, COUNT(*) as team_cnt FROM teams WHERE activity_id = ? AND status = 'confirmed'",
+    [id]
+  )
+  let teamMembers = 0;
+  let teamCount = 0;
+  if (teamCntResult.length && teamCntResult[0].values.length) {
+    teamMembers = teamCntResult[0].values[0][0] as number;
+    teamCount = teamCntResult[0].values[0][1] as number;
+  }
+  const confirmedCount = confirmedIndividual + teamMembers;
 
   const wlResult = db.exec(
     "SELECT COUNT(*) as cnt FROM registrations WHERE activity_id = ? AND status = 'waitlisted'",
@@ -51,11 +63,18 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 
   const totalRegistrations = confirmedCount + waitlistCount + cancelledCount + refundCount
 
-  const checkedResult = db.exec(
-    'SELECT COUNT(DISTINCT registration_id) as cnt FROM checkins WHERE activity_id = ?',
+  const checkedIndResult = db.exec(
+    'SELECT COUNT(DISTINCT registration_id) as cnt FROM checkins WHERE activity_id = ? AND registration_id IN (SELECT id FROM registrations WHERE team_id IS NULL)',
     [id]
   )
-  const checkedIn = checkedResult.length ? (checkedResult[0].values[0][0] as number) : 0
+  const checkedIndividual = checkedIndResult.length ? (checkedIndResult[0].values[0][0] as number) : 0
+
+  const checkedTeamResult = db.exec(
+    'SELECT COALESCE(SUM(CASE WHEN tm.checked_in = 1 THEN 1 ELSE 0 END), 0) as cnt FROM team_members tm JOIN registrations r ON tm.registration_id = r.id WHERE r.activity_id = ? AND r.status = ?',
+    [id, 'confirmed']
+  );
+  const checkedTeam = checkedTeamResult.length ? (checkedTeamResult[0].values[0][0] as number) : 0;
+  const checkedIn = checkedIndividual + checkedTeam;
 
   const excResult = db.exec(
     'SELECT COUNT(*) as cnt FROM checkins WHERE activity_id = ? AND is_exception = 1',
@@ -99,7 +118,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   })
 
   const regListResult = db.exec(
-    'SELECT name, status, registered_at FROM registrations WHERE activity_id = ? ORDER BY registered_at ASC',
+    'SELECT name, status, registered_at, team_name FROM registrations WHERE activity_id = ? ORDER BY registered_at ASC',
     [id]
   )
   if (regListResult.length && regListResult[0].values.length) {
@@ -111,10 +130,14 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
         cancelled: '取消',
         refunded: '已退款',
       }
+      const eventName = reg.team_name ? `团队报名: ${reg.team_name}` : '用户报名';
+      const detailText = reg.team_name
+        ? `${reg.name} 创建团队"${reg.team_name}"（${statusMap[reg.status] || reg.status}）`
+        : `${reg.name} 报名（${statusMap[reg.status] || reg.status}）`;
       timeline.push({
         time: reg.registered_at,
-        event: '用户报名',
-        detail: `${reg.name} 报名（${statusMap[reg.status] || reg.status}）`,
+        event: eventName,
+        detail: detailText,
       })
     }
   }
@@ -163,6 +186,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
         exceptionCount,
         totalPointsIssued,
         refundCount,
+        teamCount,
       },
       exceptions,
       timeline,

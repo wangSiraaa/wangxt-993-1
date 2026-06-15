@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mountain, Bike, MapPin, Calendar, Users, Shield, AlertTriangle,
-  CheckCircle, XCircle, Clock, ChevronRight, Package, Info
+  CheckCircle, XCircle, Clock, ChevronRight, Package, Info, Plus, Trash2, User
 } from 'lucide-react';
 import { activities as activityApi, registrations as regApi } from '@/api';
-import type { Activity, Registration, WeatherInfo } from '@/types';
+import type { Activity, Registration, WeatherInfo, TeamMember } from '@/types';
 import StatusBadge from '@/components/StatusBadge';
 import WeatherAlert from '@/components/WeatherAlert';
 import { useStore } from '@/store';
@@ -14,17 +14,34 @@ import { cn } from '@/lib/utils';
 const riskColors: Record<string, string> = { low: 'bg-success', medium: 'bg-waitlist', high: 'bg-warning' };
 const riskLabels: Record<string, string> = { low: '低风险', medium: '中风险', high: '高风险' };
 
+interface TeamMemberForm {
+  name: string; phone: string; age: string;
+  emergencyContact: string; emergencyPhone: string;
+  liabilitySigned: boolean; equipmentConfirmed: boolean[];
+}
+
 interface FormState {
   name: string; phone: string; age: string;
   emergencyContact: string; emergencyPhone: string;
   liabilitySigned: boolean; equipmentConfirmed: boolean[];
+  isTeam: boolean; teamName: string; teamMemberCount: string;
+  teamMembers: TeamMemberForm[];
 }
 
 interface FormErrors {
   name?: string; phone?: string; age?: string;
   emergencyContact?: string; emergencyPhone?: string;
   liabilitySigned?: string; equipmentConfirmed?: string;
-  general?: string;
+  teamName?: string; teamMembers?: string; general?: string;
+}
+
+function createEmptyMember(eqLen: number): TeamMemberForm {
+  return {
+    name: '', phone: '', age: '',
+    emergencyContact: '', emergencyPhone: '',
+    liabilitySigned: false,
+    equipmentConfirmed: new Array(eqLen).fill(false),
+  };
 }
 
 export default function ActivityDetail() {
@@ -40,6 +57,8 @@ export default function ActivityDetail() {
     name: '', phone: '', age: '',
     emergencyContact: '', emergencyPhone: '',
     liabilitySigned: false, equipmentConfirmed: [],
+    isTeam: false, teamName: '', teamMemberCount: '2',
+    teamMembers: [],
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
@@ -47,7 +66,17 @@ export default function ActivityDetail() {
   useEffect(() => {
     setLoading(true);
     activityApi.getDetail(id!)
-      .then((a) => { setActivity(a); setForm((f) => ({ ...f, equipmentConfirmed: new Array(a.equipmentRequirements.length).fill(false) })); })
+      .then((a) => {
+        setActivity(a);
+        setForm((f) => {
+          const eqArr = new Array(a.equipmentRequirements.length).fill(false);
+          return {
+            ...f,
+            equipmentConfirmed: [...eqArr],
+            teamMembers: [createEmptyMember(a.equipmentRequirements.length)],
+          };
+        });
+      })
       .catch(() => setActivity(null))
       .finally(() => setLoading(false));
 
@@ -55,6 +84,15 @@ export default function ActivityDetail() {
       .then(setWeather)
       .catch(() => setWeather(null));
   }, [id]);
+
+  const syncTeamMemberCount = (count: number, eqLen: number) => {
+    setForm((f) => {
+      const members = [...f.teamMembers];
+      while (members.length < count) members.push(createEmptyMember(eqLen));
+      while (members.length > count) members.pop();
+      return { ...f, teamMembers: members };
+    });
+  };
 
   const validate = (): boolean => {
     const e: FormErrors = {};
@@ -67,6 +105,24 @@ export default function ActivityDetail() {
     if (!/^1\d{10}$/.test(form.emergencyPhone)) e.emergencyPhone = '请输入正确的紧急联系人电话';
     if (!form.liabilitySigned) e.liabilitySigned = '请阅读并同意免责声明';
     if (activity && form.equipmentConfirmed.some((v) => !v)) e.equipmentConfirmed = '请确认所有装备要求';
+
+    if (form.isTeam) {
+      if (!form.teamName.trim()) e.teamName = '请填写团队名称';
+      const memberCount = parseInt(form.teamMemberCount) || 1;
+      if (memberCount < 1) e.teamMembers = '至少需要1名队员';
+      form.teamMembers.slice(0, memberCount).forEach((m, idx) => {
+        const prefix = `队员${idx + 1}`;
+        if (!m.name.trim()) e.teamMembers = `${prefix}请填写姓名`;
+        if (!/^1\d{10}$/.test(m.phone)) e.teamMembers = `${prefix}请填写正确手机号`;
+        const ma = parseInt(m.age);
+        if (!m.age || isNaN(ma) || (activity && (ma < activity.ageMin || ma > activity.ageMax)))
+          e.teamMembers = `${prefix}年龄不符合要求`;
+        if (!m.liabilitySigned) e.teamMembers = `${prefix}请签署免责声明`;
+        if (activity && m.equipmentConfirmed.some((v) => !v))
+          e.teamMembers = `${prefix}请确认所有装备要求`;
+      });
+    }
+
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -75,7 +131,7 @@ export default function ActivityDetail() {
     if (!validate() || !activity || !currentUser) return;
     setSubmitting(true);
     try {
-      const result = await regApi.register(activity.id, {
+      const payload: any = {
         name: form.name,
         phone: form.phone,
         age: parseInt(form.age),
@@ -84,7 +140,26 @@ export default function ActivityDetail() {
         liabilitySigned: form.liabilitySigned,
         equipmentConfirmed: form.equipmentConfirmed.every(Boolean),
         userId: currentUser.id,
-      });
+      };
+
+      if (form.isTeam) {
+        const memberCount = parseInt(form.teamMemberCount) || 0;
+        payload.isTeam = true;
+        payload.teamName = form.teamName;
+        payload.teamMembers = form.teamMembers.slice(0, memberCount).map((m) => ({
+          name: m.name,
+          phone: m.phone,
+          age: parseInt(m.age),
+          emergencyContact: m.emergencyContact,
+          emergencyPhone: m.emergencyPhone,
+          liabilitySigned: m.liabilitySigned,
+          equipmentConfirmed: m.equipmentConfirmed.every(Boolean),
+          isLeader: false,
+        }));
+      }
+
+      const result = await regApi.register(activity.id, payload);
+
       const fullReg: Registration = {
         id: result.id,
         activityId: activity.id,
@@ -99,10 +174,36 @@ export default function ActivityDetail() {
         status: result.status,
         waitlistPosition: result.waitlistPosition ?? null,
         registeredAt: new Date().toISOString(),
+        teamId: result.teamId,
+        isTeamLeader: form.isTeam,
+        teamName: form.isTeam ? form.teamName : undefined,
+        members: form.isTeam
+          ? form.teamMembers.slice(0, parseInt(form.teamMemberCount) || 0).map((m, i) => ({
+              id: `tm-${i}`,
+              registrationId: result.id,
+              teamId: result.teamId!,
+              name: m.name,
+              phone: m.phone,
+              age: parseInt(m.age),
+              emergencyContact: m.emergencyContact,
+              emergencyPhone: m.emergencyPhone,
+              liabilitySigned: m.liabilitySigned,
+              equipmentConfirmed: m.equipmentConfirmed.every(Boolean),
+              isLeader: false,
+              checkedIn: false,
+            }))
+          : undefined,
       };
+
+      const addedCount = form.isTeam ? (result.memberCount || 1) : 1;
+
       setMyReg(fullReg);
-      addNotification(result.status === 'waitlisted' ? `已加入候补，排在第 ${result.waitlistPosition} 位` : '报名成功！');
-      setActivity((a) => a ? { ...a, currentCount: a.currentCount + 1 } : a);
+      if (form.isTeam) {
+        addNotification(`团队${form.teamName}报名成功！共${addedCount}人${result.status === 'waitlisted' ? `，候补位置第 ${result.waitlistPosition} 位` : ''}`);
+      } else {
+        addNotification(result.status === 'waitlisted' ? `已加入候补，排在第 ${result.waitlistPosition} 位` : '报名成功！');
+      }
+      setActivity((a) => a ? { ...a, currentCount: (a.currentCount || 0) + addedCount } : a);
     } catch (err) {
       setErrors({ general: err instanceof Error ? err.message : '报名失败，请稍后重试' });
     } finally {
@@ -113,10 +214,11 @@ export default function ActivityDetail() {
   const handleCancel = async () => {
     if (!myReg || !currentUser) return;
     try {
-      await regApi.cancel(myReg.id);
+      const result = await regApi.cancel(myReg.id);
+      const cancelledCount = result.cancelledMembers || 1;
       setMyReg({ ...myReg, status: 'cancelled', waitlistPosition: null });
-      addNotification('已取消报名');
-      setActivity((a) => a ? { ...a, currentCount: Math.max(a.currentCount - 1, 0) } : a);
+      addNotification(`已取消报名${cancelledCount > 1 ? `，共取消${cancelledCount}人` : ''}`);
+      setActivity((a) => a ? { ...a, currentCount: Math.max((a.currentCount || 0) - cancelledCount, 0) } : a);
     } catch (err) {
       addNotification(err instanceof Error ? err.message : '取消失败');
     }
@@ -139,6 +241,7 @@ export default function ActivityDetail() {
   const isFull = activity.currentCount >= activity.capacity;
   const totalDistance = activity.routeSegments.reduce((s, r) => s + r.distance, 0);
   const canRegister = (activity.status === 'open' || activity.status === 'full') && !myReg;
+  const eqLen = activity.equipmentRequirements.length;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -228,12 +331,12 @@ export default function ActivityDetail() {
             <div className="mb-3">
               <div className="flex justify-between text-sm text-gray-500 mb-1">
                 <span>已报名 {activity.currentCount}/{activity.capacity}</span>
-                <span>{Math.round((activity.currentCount / activity.capacity) * 100)}%</span>
+                <span>{Math.round(((activity.currentCount || 0) / activity.capacity) * 100)}%</span>
               </div>
               <div className="w-full bg-gray-100 rounded-full h-3">
                 <div
                   className={cn('h-3 rounded-full transition-all', isFull ? 'bg-waitlist' : 'bg-forest-400')}
-                  style={{ width: `${Math.min((activity.currentCount / activity.capacity) * 100, 100)}%` }}
+                  style={{ width: `${Math.min(((activity.currentCount || 0) / activity.capacity) * 100, 100)}%` }}
                 />
               </div>
             </div>
@@ -249,6 +352,22 @@ export default function ActivityDetail() {
               <h3 className="font-serif text-lg font-semibold text-forest-800 mb-3">我的报名</h3>
               <div className="space-y-2 text-sm mb-4">
                 <div className="flex justify-between"><span className="text-gray-500">姓名</span><span>{myReg.name}</span></div>
+                {myReg.teamName && (
+                  <div className="flex justify-between"><span className="text-gray-500">团队</span><span className="font-medium text-forest-700">{myReg.teamName}{myReg.isTeamLeader ? '（队长）' : ''}</span></div>
+                )}
+                {myReg.members && myReg.members.length > 0 && (
+                  <div className="pt-2 border-t">
+                    <p className="text-gray-500 mb-2">队员（{myReg.members.length}人）：</p>
+                    {myReg.members.map((m, i) => (
+                      <div key={i} className="flex items-center gap-2 py-1 text-xs">
+                        <User className="w-3 h-3 text-gray-400" />
+                        <span>{m.name}</span>
+                        <span className="text-gray-400">{m.phone}</span>
+                        {m.isLeader && <span className="text-forest-600">（队长）</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex justify-between"><span className="text-gray-500">状态</span><StatusBadge status={myReg.status} type="registration" /></div>
                 {myReg.waitlistPosition && (
                   <div className="flex justify-between"><span className="text-gray-500">候补位次</span><span className="text-waitlist font-medium">第 {myReg.waitlistPosition} 位</span></div>
@@ -270,34 +389,147 @@ export default function ActivityDetail() {
                 </div>
               )}
 
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-xs font-medium text-gray-700 mb-2">报名方式</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setForm({ ...form, isTeam: false })}
+                    className={cn('flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-all',
+                      !form.isTeam ? 'bg-forest-500 text-white border-forest-500' : 'bg-white text-gray-600 border-gray-200 hover:border-forest-300')}
+                  >个人报名</button>
+                  <button
+                    onClick={() => setForm({ ...form, isTeam: true })}
+                    className={cn('flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-all',
+                      form.isTeam ? 'bg-forest-500 text-white border-forest-500' : 'bg-white text-gray-600 border-gray-200 hover:border-forest-300')}
+                  >团队报名</button>
+                </div>
+              </div>
+
               {step === 0 && (
                 <div className="space-y-4 animate-fade-in">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
-                    <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="greenway-input" placeholder="请输入真实姓名" />
-                    {errors.name && <p className="text-warning text-xs mt-1">{errors.name}</p>}
+                  {form.isTeam && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">团队名称</label>
+                        <input value={form.teamName} onChange={(e) => setForm({ ...form, teamName: e.target.value })} className="greenway-input" placeholder="例如：青山骑行小队" />
+                        {errors.teamName && <p className="text-warning text-xs mt-1">{errors.teamName}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">队员人数（不含队长）</label>
+                        <select
+                          value={form.teamMemberCount}
+                          onChange={(e) => {
+                            setForm({ ...form, teamMemberCount: e.target.value });
+                            syncTeamMemberCount(parseInt(e.target.value) || 1, eqLen);
+                          }}
+                          className="greenway-input"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                            <option key={n} value={String(n)}>{n} 人（团队共{n + 1}人）</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="pt-2 border-t border-gray-100">
+                    <p className="text-xs text-forest-600 font-medium mb-2 flex items-center gap-1">
+                      <User className="w-3 h-3" /> {form.isTeam ? '队长信息' : '报名人信息'}
+                    </p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                        <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="greenway-input" placeholder="请输入真实姓名" />
+                        {errors.name && <p className="text-warning text-xs mt-1">{errors.name}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">手机号</label>
+                        <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="greenway-input" placeholder="请输入手机号" />
+                        {errors.phone && <p className="text-warning text-xs mt-1">{errors.phone}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">年龄</label>
+                        <input type="number" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} className="greenway-input" placeholder={`${activity.ageMin}-${activity.ageMax}岁`} />
+                        {errors.age && <p className="text-warning text-xs mt-1">{errors.age}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">紧急联系人</label>
+                        <input value={form.emergencyContact} onChange={(e) => setForm({ ...form, emergencyContact: e.target.value })} className="greenway-input" placeholder="联系人姓名" />
+                        {errors.emergencyContact && <p className="text-warning text-xs mt-1">{errors.emergencyContact}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">紧急联系人电话</label>
+                        <input value={form.emergencyPhone} onChange={(e) => setForm({ ...form, emergencyPhone: e.target.value })} className="greenway-input" placeholder="联系人手机号" />
+                        {errors.emergencyPhone && <p className="text-warning text-xs mt-1">{errors.emergencyPhone}</p>}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">手机号</label>
-                    <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="greenway-input" placeholder="请输入手机号" />
-                    {errors.phone && <p className="text-warning text-xs mt-1">{errors.phone}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">年龄</label>
-                    <input type="number" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} className="greenway-input" placeholder={`${activity.ageMin}-${activity.ageMax}岁`} />
-                    {errors.age && <p className="text-warning text-xs mt-1">{errors.age}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">紧急联系人</label>
-                    <input value={form.emergencyContact} onChange={(e) => setForm({ ...form, emergencyContact: e.target.value })} className="greenway-input" placeholder="联系人姓名" />
-                    {errors.emergencyContact && <p className="text-warning text-xs mt-1">{errors.emergencyContact}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">紧急联系人电话</label>
-                    <input value={form.emergencyPhone} onChange={(e) => setForm({ ...form, emergencyPhone: e.target.value })} className="greenway-input" placeholder="联系人手机号" />
-                    {errors.emergencyPhone && <p className="text-warning text-xs mt-1">{errors.emergencyPhone}</p>}
-                  </div>
-                  <button onClick={() => { setStep(1); }} className="greenway-btn-primary w-full flex items-center justify-center gap-1">
+
+                  {form.isTeam && form.teamMembers.length > 0 && (
+                    <div className="pt-3 border-t border-gray-100 space-y-4">
+                      {form.teamMembers.slice(0, parseInt(form.teamMemberCount) || 1).map((member, idx) => (
+                        <div key={idx} className="p-3 bg-forest-50/30 rounded-lg border border-forest-100">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-forest-600 font-medium flex items-center gap-1">
+                              <Users className="w-3 h-3" /> 队员{idx + 1}信息
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <input value={member.name} onChange={(e) => {
+                                const arr = [...form.teamMembers]; arr[idx].name = e.target.value; setForm({ ...form, teamMembers: arr });
+                              }} className="greenway-input text-xs py-1.5" placeholder="姓名" />
+                            </div>
+                            <div>
+                              <input value={member.phone} onChange={(e) => {
+                                const arr = [...form.teamMembers]; arr[idx].phone = e.target.value; setForm({ ...form, teamMembers: arr });
+                              }} className="greenway-input text-xs py-1.5" placeholder="手机号" />
+                            </div>
+                            <div>
+                              <input type="number" value={member.age} onChange={(e) => {
+                                const arr = [...form.teamMembers]; arr[idx].age = e.target.value; setForm({ ...form, teamMembers: arr });
+                              }} className="greenway-input text-xs py-1.5" placeholder="年龄" />
+                            </div>
+                            <div>
+                              <input value={member.emergencyContact} onChange={(e) => {
+                                const arr = [...form.teamMembers]; arr[idx].emergencyContact = e.target.value; setForm({ ...form, teamMembers: arr });
+                              }} className="greenway-input text-xs py-1.5" placeholder="紧急联系人" />
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <input value={member.emergencyPhone} onChange={(e) => {
+                              const arr = [...form.teamMembers]; arr[idx].emergencyPhone = e.target.value; setForm({ ...form, teamMembers: arr });
+                            }} className="greenway-input text-xs py-1.5 w-full" placeholder="紧急联系人电话" />
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-forest-100 space-y-1.5">
+                            <label className="flex items-center gap-2 text-xs cursor-pointer">
+                              <input type="checkbox" checked={member.liabilitySigned} onChange={(e) => {
+                                const arr = [...form.teamMembers]; arr[idx].liabilitySigned = e.target.checked; setForm({ ...form, teamMembers: arr });
+                              }} className="rounded border-gray-300 text-forest-600" />
+                              <span>签署免责声明</span>
+                            </label>
+                            <div className="text-xs text-gray-500 mb-1">装备确认：</div>
+                            <div className="flex flex-wrap gap-2">
+                              {activity.equipmentRequirements.map((eq, eqIdx) => (
+                                <label key={eqIdx} className="flex items-center gap-1 text-xs cursor-pointer">
+                                  <input type="checkbox" checked={member.equipmentConfirmed[eqIdx] || false} onChange={(e) => {
+                                    const arr = [...form.teamMembers];
+                                    const eqArr = [...arr[idx].equipmentConfirmed]; eqArr[eqIdx] = e.target.checked;
+                                    arr[idx].equipmentConfirmed = eqArr;
+                                    setForm({ ...form, teamMembers: arr });
+                                  }} className="rounded border-gray-300 text-forest-600" />
+                                  <span className="truncate max-w-24" title={eq}>{eq}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {errors.teamMembers && <p className="text-warning text-xs">{errors.teamMembers}</p>}
+                    </div>
+                  )}
+
+                  <button onClick={() => { if (validate()) setStep(1); }} className="greenway-btn-primary w-full flex items-center justify-center gap-1">
                     下一步 <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -316,7 +548,7 @@ export default function ActivityDetail() {
                   </div>
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <input type="checkbox" checked={form.liabilitySigned} onChange={(e) => setForm({ ...form, liabilitySigned: e.target.checked })} className="rounded border-gray-300 text-forest-600 focus:ring-forest-500" />
-                    <span>我已阅读并同意以上免责声明</span>
+                    <span>我已阅读并同意以上免责声明{form.isTeam ? '（包括所有团队成员）' : ''}</span>
                   </label>
                   {errors.liabilitySigned && <p className="text-warning text-xs">{errors.liabilitySigned}</p>}
 
